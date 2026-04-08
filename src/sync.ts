@@ -10,6 +10,7 @@ import {
   setAirtableRecordIds,
   getLatestBookedDate,
 } from "./db";
+import { addDays } from "./utils";
 import type { Env } from "./types";
 
 // Fallback start date for the very first sync (fetches full history).
@@ -25,9 +26,8 @@ const SESSION_EXPIRY_WARN_DAYS = 7;
 // ---------------------------------------------------------------------------
 
 const REAUTH_INSTRUCTIONS =
-  "Re-authorize via Enable Banking, then run:\n" +
-  "  npx wrangler secret put ENABLE_BANKING_SESSION_ID\n" +
-  "  npx wrangler kv:key put --binding=KV session:valid_until <new-date>";
+  "Re-authorize by visiting https://banklink.interne.neosolsetmurs.fr/reauth in a browser, " +
+  "or pass aspsp_name/aspsp_country as query params if not pre-configured.";
 
 async function checkSessionExpiry(env: Env): Promise<void> {
   const validUntil = await env.KV.get("session:valid_until");
@@ -35,8 +35,8 @@ async function checkSessionExpiry(env: Env): Promise<void> {
   if (!validUntil) {
     console.warn(
       "[sync] WARNING: session:valid_until not set in KV. " +
-      "Store the session expiry date so the app can warn you before it expires:\n" +
-      "  npx wrangler kv:key put --binding=KV session:valid_until <YYYY-MM-DD>"
+      "This is set automatically after completing /reauth + /callback. " +
+      "To set manually: npx wrangler kv:key put --binding=KV session:valid_until <YYYY-MM-DD>"
     );
     return;
   }
@@ -69,7 +69,7 @@ async function syncAccount(
   at: AirtableClient,
   env: Env
 ): Promise<boolean> {
-  console.log(`[sync] Starting account ${accountId}`);
+  console.log(`[sync][account:${accountId}] Starting`);
 
   const cursorKey = `cursor:${accountId}`;
   const fetchCursorKey = `fetch-cursor:${accountId}`;
@@ -79,7 +79,7 @@ async function syncAccount(
   let caughtUp = false;
 
   if (backlog > 0) {
-    console.log(`[sync] Airtable backlog: ${backlog} — draining, skipping EB fetch`);
+    console.warn(`[sync][account:${accountId}] Airtable backlog: ${backlog} unsynced — skipping EB fetch this run`);
   } else {
     // 2. No backlog — fetch the next window from Enable Banking.
     const fetchCursor = await env.KV.get(fetchCursorKey);
@@ -93,10 +93,18 @@ async function syncAccount(
     // When backfilling, cap at windowEnd to limit volume per invocation.
     const dateTo = caughtUp ? addDays(today, 1) : windowEnd;
 
-    console.log(`[sync] Fetching ${windowStart} → ${dateTo} (cursor=${cursor}, fetchCursor=${fetchCursor}, caughtUp=${caughtUp})`);
+    console.log(`[sync][account:${accountId}] Fetching ${windowStart} → ${dateTo} (cursor=${cursor}, fetchCursor=${fetchCursor}, caughtUp=${caughtUp})`);
 
     const transactions = await eb.fetchAllTransactions(accountId, windowStart, dateTo);
-    console.log(`[sync] Fetched ${transactions.length} transactions (BOOK: ${transactions.filter(t => t.status === "BOOK").length}, PDNG: ${transactions.filter(t => t.status === "PDNG").length})`);
+    const bookCount = transactions.filter((t) => t.status === "BOOK").length;
+    const pdngCount = transactions.filter((t) => t.status === "PDNG").length;
+    console.log(`[sync][account:${accountId}] Fetched ${transactions.length} transactions (BOOK: ${bookCount}, PDNG: ${pdngCount})`);
+
+    // Warn about BOOK transactions with no stable ID (they cannot be stored)
+    const nullRefCount = transactions.filter((t) => t.status === "BOOK" && t.entry_reference === null).length;
+    if (nullRefCount > 0) {
+      console.warn(`[sync][account:${accountId}] Skipping ${nullRefCount} BOOK transaction(s) with null entry_reference — no stable ID available`);
+    }
 
     // 3a. Upsert BOOK transactions into D1.
     await upsertTransactions(env.DB, accountId, transactions);
@@ -106,16 +114,18 @@ async function syncAccount(
     if (caughtUp) {
       const pdngAirtableIds = await getPendingAirtableIds(env.DB, accountId);
       if (pdngAirtableIds.length > 0) {
-        console.log(`[sync] Deleting ${pdngAirtableIds.length} stale PDNG records from Airtable`);
+        console.log(`[sync][account:${accountId}] Deleting ${pdngAirtableIds.length} stale PDNG records from Airtable`);
         await at.deleteRecords(pdngAirtableIds);
       }
       await deletePendingTransactions(env.DB, accountId);
 
       const pdngTxs = transactions.filter((t) => t.status === "PDNG");
       if (pdngTxs.length > 0) {
-        console.log(`[sync] Inserting ${pdngTxs.length} fresh PDNG transactions`);
+        console.log(`[sync][account:${accountId}] Inserting ${pdngTxs.length} fresh PDNG transactions`);
         await insertPendingTransactions(env.DB, accountId, transactions);
       }
+    } else {
+      console.log(`[sync][account:${accountId}] Backfill in progress — PDNG reset deferred until caught up`);
     }
 
     // 4. Advance the fetch cursor.
@@ -128,10 +138,12 @@ async function syncAccount(
       const latestBooked = await getLatestBookedDate(env.DB, accountId);
       if (latestBooked) {
         await env.KV.put(cursorKey, latestBooked);
-        console.log(`[sync] BOOK cursor advanced to ${latestBooked}`);
+        console.log(`[sync][account:${accountId}] BOOK cursor advanced to ${latestBooked}`);
+      } else {
+        console.warn(`[sync][account:${accountId}] No BOOK transactions found — cursor not updated`);
       }
     } else {
-      console.log(`[sync] Backfill in progress — next window starts at ${dateTo}`);
+      console.log(`[sync][account:${accountId}] Backfill in progress — next window starts at ${dateTo}`);
     }
   }
 
@@ -139,11 +151,15 @@ async function syncAccount(
   const totalUnsynced = await countUnsynced(env.DB, accountId);
   const unsynced = await getUnsynced(env.DB, accountId, AIRTABLE_PUSH_LIMIT);
   const remainingAfter = totalUnsynced - unsynced.length;
-  console.log(`[sync] Pushing ${unsynced.length} to Airtable (${remainingAfter} remaining after this run)`);
 
-  await at.createRecords(unsynced, (pairs) => setAirtableRecordIds(env.DB, pairs));
+  if (unsynced.length === 0) {
+    console.log(`[sync][account:${accountId}] No unsynced transactions to push to Airtable`);
+  } else {
+    console.log(`[sync][account:${accountId}] Pushing ${unsynced.length} to Airtable (${remainingAfter} remaining after this run)`);
+    await at.createRecords(unsynced, (pairs) => setAirtableRecordIds(env.DB, pairs));
+  }
 
-  console.log(`[sync] Account ${accountId} done`);
+  console.log(`[sync][account:${accountId}] Done`);
 
   // More work remains if: backlog not fully drained, OR still in backfill mode.
   return remainingAfter > 0 || !caughtUp;
@@ -154,7 +170,25 @@ async function syncAccount(
 // ---------------------------------------------------------------------------
 
 export async function runSync(env: Env): Promise<boolean> {
-  const accountIds: string[] = JSON.parse(env.ENABLE_BANKING_ACCOUNT_IDS);
+  // Record the start time for /status observability
+  await env.KV.put("sync:last_run", new Date().toISOString());
+
+  // Resolve session ID: prefer KV (set by /callback OAuth flow) over env secret
+  const kvSessionId = await env.KV.get("session:id");
+  const sessionId = kvSessionId ?? env.ENABLE_BANKING_SESSION_ID;
+
+  // Resolve account IDs: prefer KV (set by /callback) over env secret
+  const kvAccountIds = await env.KV.get("session:account_ids");
+  let accountIds: string[];
+  try {
+    accountIds = kvAccountIds
+      ? (JSON.parse(kvAccountIds) as string[])
+      : (JSON.parse(env.ENABLE_BANKING_ACCOUNT_IDS) as string[]);
+  } catch {
+    console.error("[sync] Failed to parse account IDs — check ENABLE_BANKING_ACCOUNT_IDS secret or session:account_ids KV value");
+    return false;
+  }
+
   if (accountIds.length === 0) {
     console.warn("[sync] No account IDs configured — nothing to do");
     return false;
@@ -165,7 +199,7 @@ export async function runSync(env: Env): Promise<boolean> {
   const eb = new EnableBankingClient(
     env.ENABLE_BANKING_APP_ID,
     env.ENABLE_BANKING_PRIVATE_KEY,
-    env.ENABLE_BANKING_SESSION_ID
+    sessionId,
   );
   const at = new AirtableClient(
     env.AIRTABLE_API_KEY,
@@ -188,14 +222,4 @@ export async function runSync(env: Env): Promise<boolean> {
   }
 
   return moreWork;
-}
-
-// ---------------------------------------------------------------------------
-// Utility
-// ---------------------------------------------------------------------------
-
-function addDays(isoDate: string, days: number): string {
-  const d = new Date(isoDate);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
 }

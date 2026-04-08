@@ -43,6 +43,27 @@ export interface EBTransactionsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Enable Banking OAuth / session types
+// ---------------------------------------------------------------------------
+
+export interface EBAuthResponse {
+  url: string;
+}
+
+export interface EBSessionAccount {
+  uid: string;
+  iban?: string;
+  bban?: string;
+  [key: string]: unknown;
+}
+
+export interface EBSessionResponse {
+  session_id: string;
+  valid_until: string; // ISO date
+  accounts: EBSessionAccount[];
+}
+
+// ---------------------------------------------------------------------------
 // Internal DB row type
 // ---------------------------------------------------------------------------
 
@@ -82,6 +103,11 @@ export interface Env {
   AIRTABLE_TABLE_NAME: string;
 
   ADMIN_SECRET: string;
+
+  // Optional: defaults for the /reauth endpoint (can also be passed as query params)
+  ENABLE_BANKING_ASPSP_NAME?: string;
+  ENABLE_BANKING_ASPSP_COUNTRY?: string;
+  ENABLE_BANKING_PSU_TYPE?: string;
 
   SYNC_QUEUE: Queue;
 }

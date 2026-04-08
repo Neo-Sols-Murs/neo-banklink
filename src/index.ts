@@ -1,4 +1,6 @@
 import { runSync } from "./sync";
+import { handleReauth, handleCallback } from "./auth";
+import { handleStatus } from "./status";
 import type { Env } from "./types";
 
 async function startSync(env: Env): Promise<void> {
@@ -13,15 +15,32 @@ async function startSync(env: Env): Promise<void> {
 
 export default {
   // Cron trigger.
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(startSync(env));
   },
 
-  // Manual HTTP trigger — protected by ADMIN_SECRET.
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const { pathname } = new URL(request.url);
+
+    // OAuth redirect flow — no ADMIN_SECRET required (browser redirect).
+    // CSRF protection is handled internally via a KV-stored state token.
+    if (pathname === "/reauth" && request.method === "GET") {
+      return handleReauth(request, env);
+    }
+    if (pathname === "/callback" && request.method === "GET") {
+      return handleCallback(request, env);
+    }
+
+    // All other routes require ADMIN_SECRET.
     if (request.headers.get("Authorization") !== `Bearer ${env.ADMIN_SECRET}`) {
       return new Response("Unauthorized", { status: 401 });
     }
+
+    if (pathname === "/status" && request.method === "GET") {
+      return handleStatus(request, env);
+    }
+
+    // Default: manual sync trigger — protected by ADMIN_SECRET.
     ctx.waitUntil(startSync(env));
     return new Response("Sync started", { status: 202 });
   },

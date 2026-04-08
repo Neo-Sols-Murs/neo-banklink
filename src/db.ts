@@ -186,6 +186,34 @@ export async function setAirtableRecordIds(
 }
 
 
+// ---------------------------------------------------------------------------
+// Status / aggregate queries
+// ---------------------------------------------------------------------------
+
+export interface AccountStats {
+  account_id: string;
+  total: number;
+  booked: number;
+  pending: number;
+  unsynced: number;
+}
+
+/** Return per-account transaction counts from D1. */
+export async function getAccountStats(db: D1Database): Promise<AccountStats[]> {
+  const result = await db
+    .prepare(
+      `SELECT account_id,
+         COUNT(*) as total,
+         SUM(CASE WHEN status='BOOK' THEN 1 ELSE 0 END) as booked,
+         SUM(CASE WHEN status='PDNG' THEN 1 ELSE 0 END) as pending,
+         SUM(CASE WHEN airtable_record_id IS NULL THEN 1 ELSE 0 END) as unsynced
+       FROM transactions
+       GROUP BY account_id`
+    )
+    .all<AccountStats>();
+  return result.results;
+}
+
 /** Return the latest booking_date among BOOK transactions for an account. */
 export async function getLatestBookedDate(
   db: D1Database,

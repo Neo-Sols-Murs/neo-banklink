@@ -1,5 +1,5 @@
 import { importPKCS8, SignJWT } from "jose";
-import type { EBTransaction, EBTransactionsResponse } from "../types";
+import type { EBTransaction, EBTransactionsResponse, EBAuthResponse, EBSessionResponse } from "../types";
 
 export class SessionExpiredError extends Error {
   constructor() {
@@ -45,6 +45,60 @@ export class EnableBankingClient {
   private async authHeader(): Promise<string> {
     const jwt = await generateJwt(this.appId, this.privateKeyPem);
     return `Bearer ${jwt}`;
+  }
+
+  /**
+   * Initiate the Enable Banking OAuth flow for a given bank (ASPSP).
+   * Returns the URL to redirect the user to for authentication.
+   */
+  async initiateAuth(
+    aspspName: string,
+    aspspCountry: string,
+    psuType: string,
+    redirectUrl: string,
+    state: string,
+    validUntil: string
+  ): Promise<string> {
+    const auth = await this.authHeader();
+    const response = await fetch(`${BASE_URL}/auth`, {
+      method: "POST",
+      headers: { Authorization: auth, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        aspsp: { name: aspspName, country: aspspCountry },
+        access: { valid_until: validUntil },
+        redirect_url: redirectUrl,
+        psu_type: psuType,
+        state,
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Enable Banking /auth error ${response.status}: ${body}`);
+    }
+
+    const data = (await response.json()) as EBAuthResponse;
+    return data.url;
+  }
+
+  /**
+   * Exchange an OAuth authorization code for a session.
+   * Returns the full session response including session_id, valid_until, and accounts.
+   */
+  async exchangeCode(code: string): Promise<EBSessionResponse> {
+    const auth = await this.authHeader();
+    const response = await fetch(`${BASE_URL}/sessions`, {
+      method: "POST",
+      headers: { Authorization: auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Enable Banking /sessions error ${response.status}: ${body}`);
+    }
+
+    return (await response.json()) as EBSessionResponse;
   }
 
   /**
