@@ -1,0 +1,43 @@
+name = "neo-banklink"
+main = "src/index.ts"
+compatibility_date = "2026-04-08"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+preview_urls = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "neo-banklink"
+database_id = "65cd404d-2894-42b8-971d-6d2140e4ff13"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "b71c8410e8164941aae89203f98c3fb6"
+
+[[queues.producers]]
+binding = "SYNC_QUEUE"
+queue = "neo-banklink-sync"
+
+[[queues.consumers]]
+queue = "neo-banklink-sync"
+max_batch_size = 1
+max_batch_timeout = 0
+
+[triggers]
+crons = ["0 * * * *"]
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1

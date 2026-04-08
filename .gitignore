@@ -1,0 +1,21 @@
+node_modules/
+.wrangler/
+.dev.vars
+dist/
+transactionsexample.json
+
+# Dotfiles (null devices in this environment)
+.bash_profile
+.bashrc
+.gitconfig
+.gitmodules
+.idea
+.mcp.json
+.profile
+.ripgreprc
+.vscode
+.zprofile
+.zshrc
+
+# Claude Code config
+.claude/
