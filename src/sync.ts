@@ -169,7 +169,37 @@ async function syncAccount(
 // Main entry — returns true if more work remains (for self-chaining)
 // ---------------------------------------------------------------------------
 
+// KV-based mutex: prevents concurrent cron + queue invocations from racing.
+// TTL is generous (5 min) — a hung worker releases the lock automatically.
+const LOCK_KEY = "sync:lock";
+const LOCK_TTL_SECONDS = 300;
+
+async function acquireLock(env: Env): Promise<boolean> {
+  const existing = await env.KV.get(LOCK_KEY);
+  if (existing) return false;
+  await env.KV.put(LOCK_KEY, "1", { expirationTtl: LOCK_TTL_SECONDS });
+  return true;
+}
+
+async function releaseLock(env: Env): Promise<void> {
+  await env.KV.delete(LOCK_KEY);
+}
+
 export async function runSync(env: Env): Promise<boolean> {
+  const acquired = await acquireLock(env);
+  if (!acquired) {
+    console.warn("[sync] Another sync is already running — skipping this invocation");
+    return false;
+  }
+
+  try {
+    return await _runSync(env);
+  } finally {
+    await releaseLock(env);
+  }
+}
+
+async function _runSync(env: Env): Promise<boolean> {
   // Record the start time for /status observability
   await env.KV.put("sync:last_run", new Date().toISOString());
 

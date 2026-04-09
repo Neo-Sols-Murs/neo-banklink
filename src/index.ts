@@ -40,9 +40,12 @@ export default {
       return handleStatus(request, env);
     }
 
-    // Default: manual sync trigger — protected by ADMIN_SECRET.
-    ctx.waitUntil(startSync(env));
-    return new Response("Sync started", { status: 202 });
+    if (pathname === "/sync" && request.method === "POST") {
+      ctx.waitUntil(startSync(env));
+      return new Response("Sync started", { status: 202 });
+    }
+
+    return new Response("Not found", { status: 404 });
   },
 
   // Queue consumer — processes one message at a time, chains via queue if more work remains.

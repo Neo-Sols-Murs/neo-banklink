@@ -64,10 +64,19 @@ export interface EBSessionAccount {
   [key: string]: unknown;
 }
 
+export interface EBSessionAccess {
+  valid_until: string; // ISO datetime
+  accounts: null | unknown;
+  balances: boolean;
+  transactions: boolean;
+}
+
 export interface EBSessionResponse {
   session_id: string;
-  valid_until: string; // ISO date
   accounts: EBSessionAccount[];
+  access: EBSessionAccess;
+  psu_type: string;
+  aspsp: { name: string; country: string };
 }
 
 // ---------------------------------------------------------------------------

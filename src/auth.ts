@@ -105,15 +105,18 @@ export async function handleCallback(request: Request, env: Env): Promise<Respon
   const accountIds = session.accounts.map((a) => a.uid);
 
   await env.KV.put("session:id", session.session_id);
-  await env.KV.put("session:valid_until", session.valid_until);
+  await env.KV.put("session:valid_until", session.access.valid_until);
   await env.KV.put("session:account_ids", JSON.stringify(accountIds));
 
   console.log(
-    `[auth] New session stored. Accounts: ${accountIds.length}, valid_until: ${session.valid_until}`
+    `[auth] New session stored. Accounts: ${accountIds.length}, valid_until: ${session.access.valid_until}`
   );
 
   const accountRows = session.accounts
-    .map((a) => `<li><code>${a.uid}</code>${a.iban ? ` — ${a.iban}` : ""}</li>`)
+    .map((a) => {
+      const iban = a.iban ?? (a.account_id as { iban?: string } | undefined)?.iban;
+      return `<li><code>${a.uid}</code>${iban ? ` — ${iban}` : ""}</li>`;
+    })
     .join("\n");
 
   return new Response(
@@ -122,7 +125,7 @@ export async function handleCallback(request: Request, env: Env): Promise<Respon
 <head><meta charset="utf-8"><title>Authorization successful — neo-banklink</title></head>
 <body>
   <h1>Authorization successful</h1>
-  <p><strong>Session valid until:</strong> ${session.valid_until}</p>
+  <p><strong>Session valid until:</strong> ${session.access.valid_until}</p>
   <p><strong>Accounts linked (${accountIds.length}):</strong></p>
   <ul>${accountRows}</ul>
   <p>The next sync will use this session automatically.</p>
