@@ -2,6 +2,8 @@ import { getAccountStats } from "./db";
 import { runSync } from "./sync";
 import type { Env } from "./types";
 
+const RESYNC_COOLDOWN_SECONDS = 10;
+
 // ---------------------------------------------------------------------------
 // Token auth helper
 // ---------------------------------------------------------------------------
@@ -22,6 +24,8 @@ export async function handleUI(request: Request, env: Env): Promise<Response> {
 
   const url = new URL(request.url);
   const flash = url.searchParams.get("synced");
+  const errorParam = url.searchParams.get("error");
+  const waitParam = url.searchParams.get("wait");
 
   // --- Session ---
   const validUntil = await env.KV.get("session:valid_until");
@@ -73,6 +77,8 @@ export async function handleUI(request: Request, env: Env): Promise<Response> {
   // --- Flash message ---
   const flashHtml = flash === "1"
     ? `<div class="flash">Sync triggered. Refresh in a few seconds to see updated stats.</div>`
+    : errorParam === "cooldown"
+    ? `<div class="flash-error">A sync was just triggered. Please wait ${waitParam ?? RESYNC_COOLDOWN_SECONDS} second(s) before trying again.</div>`
     : "";
 
   const token = url.searchParams.get("token") ?? "";
@@ -148,6 +154,15 @@ export async function handleUI(request: Request, env: Env): Promise<Response> {
       font-size: 0.875rem;
       margin-bottom: 1rem;
     }
+    .flash-error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+    }
     .reauth-link { display: block; text-align: center; font-size: 0.8rem; color: #94a3b8;
                    margin-top: 0.75rem; text-decoration: none; }
     .reauth-link:hover { color: #64748b; }
@@ -211,8 +226,19 @@ export async function handleUISync(request: Request, env: Env, ctx: ExecutionCon
 
   const url = new URL(request.url);
   const token = url.searchParams.get("token") ?? "";
+  const redirectBase = `${url.origin}/ui?token=${encodeURIComponent(token)}`;
+
+  // Cooldown: refuse if last sync was less than RESYNC_COOLDOWN_SECONDS ago.
+  const lastRun = await env.KV.get("sync:last_run");
+  if (lastRun) {
+    const secondsSince = (Date.now() - new Date(lastRun).getTime()) / 1000;
+    if (secondsSince < RESYNC_COOLDOWN_SECONDS) {
+      const wait = Math.ceil(RESYNC_COOLDOWN_SECONDS - secondsSince);
+      return Response.redirect(`${redirectBase}&error=cooldown&wait=${wait}`, 303);
+    }
+  }
 
   ctx.waitUntil(runSync(env));
 
-  return Response.redirect(`/ui?token=${encodeURIComponent(token)}&synced=1`, 303);
+  return Response.redirect(`${redirectBase}&synced=1`, 303);
 }

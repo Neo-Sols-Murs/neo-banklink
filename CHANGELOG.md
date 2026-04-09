@@ -2,6 +2,16 @@
 
 All notable changes to neo-banklink are documented here.
 
+## [0.4.2] — 2026-04-09
+
+### Fixed
+- `Response.redirect` in `POST /ui` was using a relative URL (`/ui?…`), causing Cloudflare Error 1101. Now uses an absolute URL built from `url.origin`.
+
+### Added
+- 10-second cooldown on the `/ui` resync button: if a sync was triggered less than 10 seconds ago, the form redirects back with an error banner instead of queuing another run.
+
+---
+
 ## [0.4.1] — 2026-04-09
 
 ### Fixed
