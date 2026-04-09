@@ -284,6 +284,9 @@ Two workers starting within microseconds of each other could both pass the lock 
 ### PDNG transactions are always replaced
 Every caught-up sync cycle deletes and recreates all PDNG records in Airtable. This means PDNG records lose any manual edits made in Airtable between syncs.
 
+### Manually deleted Airtable records
+If a PDNG record is manually deleted from Airtable, the next sync's batch delete will receive a 404 for the entire batch. The client retries each record in the batch individually — per-record 404s are warned and skipped, others still throw. This means manual deletions are safe and the PDNG reset will complete normally.
+
 ### No retry logic for Airtable failures
 If Airtable create fails mid-batch, the successfully created records in that batch won't have their IDs written back to D1. On the next run, those transactions will appear as unsynced again and be re-created in Airtable (duplicates). This is acceptable given current volume but would need a fix at scale.
 

@@ -2,6 +2,13 @@
 
 All notable changes to neo-banklink are documented here.
 
+## [0.4.1] — 2026-04-09
+
+### Fixed
+- Airtable batch delete 404 (caused by manually deleted PDNG records) no longer crashes the worker with a Cloudflare Error 1101. The batch is now retried record-by-record; missing records are warned and skipped so the rest of the PDNG reset completes normally.
+
+---
+
 ## [0.4.0] — 2026-04-09
 
 ### Added

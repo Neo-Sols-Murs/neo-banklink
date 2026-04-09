@@ -98,7 +98,28 @@ export class AirtableClient {
 
       if (!response.ok) {
         const body = await response.text();
-        throw new Error(`Airtable delete error ${response.status}: ${body}`);
+        if (response.status === 404 && chunk.length > 1) {
+          // Batch 404: at least one record was manually deleted. Retry one-by-one
+          // so the remaining records still get cleaned up.
+          console.warn(`[airtable] Batch delete 404 — retrying ${chunk.length} records individually`);
+          for (const id of chunk) {
+            const r = await fetch(`${this.tableUrl}?records[]=${encodeURIComponent(id)}`, {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${this.apiKey}` },
+            });
+            if (!r.ok && r.status !== 404) {
+              const rb = await r.text();
+              throw new Error(`Airtable delete error ${r.status}: ${rb}`);
+            }
+            if (r.status === 404) {
+              console.warn(`[airtable] Record ${id} not found in Airtable — already deleted manually, skipping`);
+            }
+          }
+        } else if (response.status === 404) {
+          console.warn(`[airtable] Record not found in Airtable — already deleted manually, skipping`);
+        } else {
+          throw new Error(`Airtable delete error ${response.status}: ${body}`);
+        }
       }
 
       if (i + BATCH_SIZE < recordIds.length) {
