@@ -16,6 +16,8 @@ export async function handleReauth(request: Request, env: Env): Promise<Response
   const aspspCountry = url.searchParams.get("aspsp_country") ?? env.ENABLE_BANKING_ASPSP_COUNTRY;
   const psuType      = url.searchParams.get("psu_type")      ?? env.ENABLE_BANKING_PSU_TYPE ?? "personal";
 
+  console.log(`[auth] aspsp_name="${aspspName}" aspsp_country="${aspspCountry}" psu_type="${psuType}" (sources: name=${url.searchParams.has("aspsp_name") ? "query" : "secret"}, country=${url.searchParams.has("aspsp_country") ? "query" : "secret"})`);
+
   if (!aspspName || !aspspCountry) {
     return new Response(
       JSON.stringify({
