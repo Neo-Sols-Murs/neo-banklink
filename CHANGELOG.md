@@ -2,6 +2,15 @@
 
 All notable changes to neo-banklink are documented here.
 
+## [0.4.3] — 2026-04-09
+
+### Added
+- `public/favicon.ico` served as a static asset via Wrangler's `assets` binding
+- `public/robots.txt` — `Disallow: /` for all user-agents
+- `X-Robots-Tag: noindex, nofollow` header on all worker HTTP responses
+
+---
+
 ## [0.4.2] — 2026-04-09
 
 ### Fixed

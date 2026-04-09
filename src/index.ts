@@ -23,21 +23,28 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const { pathname } = new URL(request.url);
 
+    // Instruct crawlers not to index anything on this worker.
+    const noIndex = (res: Response): Response => {
+      const r = new Response(res.body, res);
+      r.headers.set("X-Robots-Tag", "noindex, nofollow");
+      return r;
+    };
+
     // OAuth redirect flow — no ADMIN_SECRET required (browser redirect).
     // CSRF protection is handled internally via a KV-stored state token.
     if (pathname === "/reauth" && request.method === "GET") {
-      return handleReauth(request, env);
+      return noIndex(await handleReauth(request, env));
     }
     if (pathname === "/callback" && request.method === "GET") {
-      return handleCallback(request, env);
+      return noIndex(await handleCallback(request, env));
     }
 
     // UI dashboard — token-authenticated via query param (SYNC_TOKEN).
     if (pathname === "/ui" && request.method === "GET") {
-      return handleUI(request, env);
+      return noIndex(await handleUI(request, env));
     }
     if (pathname === "/ui" && request.method === "POST") {
-      return handleUISync(request, env, ctx);
+      return noIndex(await handleUISync(request, env, ctx));
     }
 
     // All other routes require ADMIN_SECRET.
@@ -46,15 +53,15 @@ export default {
     }
 
     if (pathname === "/status" && request.method === "GET") {
-      return handleStatus(request, env);
+      return noIndex(await handleStatus(request, env));
     }
 
     if (pathname === "/sync" && request.method === "POST") {
       ctx.waitUntil(startSync(env));
-      return new Response("Sync started", { status: 202 });
+      return noIndex(new Response("Sync started", { status: 202 }));
     }
 
-    return new Response("Not found", { status: 404 });
+    return noIndex(new Response("Not found", { status: 404 }));
   },
 
   // Queue consumer — processes one message at a time, chains via queue if more work remains.
