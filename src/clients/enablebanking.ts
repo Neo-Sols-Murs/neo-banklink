@@ -1,5 +1,5 @@
 import { importPKCS8, SignJWT } from "jose";
-import type { EBTransaction, EBTransactionsResponse, EBAuthResponse, EBSessionResponse } from "../types";
+import type { EBTransaction, EBTransactionsResponse, EBAuthResponse, EBASPSPDetails, EBSessionResponse } from "../types";
 
 export class SessionExpiredError extends Error {
   constructor() {
@@ -47,8 +47,41 @@ export class EnableBankingClient {
     return `Bearer ${jwt}`;
   }
 
+  private async loggedFetch(label: string, url: string, init: RequestInit): Promise<Response> {
+    const bodyPreview = init.body ? String(init.body).slice(0, 2000) : "(none)";
+    console.log(`[eb] → ${init.method ?? "GET"} ${url}  body=${bodyPreview}`);
+
+    const response = await fetch(url, init);
+    const clone = response.clone();
+    const bodyText = await clone.text();
+    const preview = bodyText.slice(0, 2000) + (bodyText.length > 2000 ? "…" : "");
+    console.log(`[eb] ← ${label} ${response.status}  body=${preview}`);
+
+    return response;
+  }
+
+  /**
+   * Fetch ASPSP details, including maximum_consent_validity (days).
+   */
+  async getAspsp(name: string, country: string): Promise<EBASPSPDetails> {
+    const auth = await this.authHeader();
+    const url = `${BASE_URL}/aspsps/${encodeURIComponent(name)}/${encodeURIComponent(country)}`;
+    const response = await this.loggedFetch("getAspsp", url, {
+      method: "GET",
+      headers: { Authorization: auth },
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Enable Banking /aspsps error ${response.status}: ${body}`);
+    }
+
+    return (await response.json()) as EBASPSPDetails;
+  }
+
   /**
    * Initiate the Enable Banking OAuth flow for a given bank (ASPSP).
+   * Fetches the ASPSP's maximum_consent_validity and caps validUntil accordingly.
    * Returns the URL to redirect the user to for authentication.
    */
   async initiateAuth(
@@ -59,17 +92,42 @@ export class EnableBankingClient {
     state: string,
     validUntil: string
   ): Promise<string> {
+    // Cap valid_until to the ASPSP's maximum_consent_validity
+    let cappedValidUntil = validUntil;
+    try {
+      const aspsp = await this.getAspsp(aspspName, aspspCountry);
+      const maxDays = aspsp.maximum_consent_validity;
+      if (maxDays !== undefined) {
+        const maxDate = new Date();
+        maxDate.setDate(maxDate.getDate() + maxDays);
+        maxDate.setHours(0, 0, 0, 0);
+        maxDate.setTime(maxDate.getTime() - 60 * 60 * 1000); // 1h safety margin
+        const requestedDate = new Date(validUntil);
+        if (requestedDate > maxDate) {
+          cappedValidUntil = maxDate.toISOString().replace("Z", "+00:00");
+          console.log(`[eb] valid_until capped: requested=${validUntil} max=${cappedValidUntil} (${maxDays}d)`);
+        } else {
+          console.log(`[eb] valid_until ok: ${validUntil} (max=${maxDays}d)`);
+        }
+      } else {
+        console.log(`[eb] ASPSP has no maximum_consent_validity, using ${validUntil}`);
+      }
+    } catch (err) {
+      console.warn(`[eb] Could not fetch ASPSP details, proceeding with original valid_until=${validUntil}:`, err);
+    }
+
     const auth = await this.authHeader();
-    const response = await fetch(`${BASE_URL}/auth`, {
+    const requestBody = JSON.stringify({
+      aspsp: { name: aspspName, country: aspspCountry },
+      access: { valid_until: cappedValidUntil },
+      redirect_url: redirectUrl,
+      psu_type: psuType,
+      state,
+    });
+    const response = await this.loggedFetch("initiateAuth", `${BASE_URL}/auth`, {
       method: "POST",
       headers: { Authorization: auth, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        aspsp: { name: aspspName, country: aspspCountry },
-        access: { valid_until: validUntil },
-        redirect_url: redirectUrl,
-        psu_type: psuType,
-        state,
-      }),
+      body: requestBody,
     });
 
     if (!response.ok) {
@@ -87,10 +145,11 @@ export class EnableBankingClient {
    */
   async exchangeCode(code: string): Promise<EBSessionResponse> {
     const auth = await this.authHeader();
-    const response = await fetch(`${BASE_URL}/sessions`, {
+    const requestBody = JSON.stringify({ code });
+    const response = await this.loggedFetch("exchangeCode", `${BASE_URL}/sessions`, {
       method: "POST",
       headers: { Authorization: auth, "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
+      body: requestBody,
     });
 
     if (!response.ok) {
@@ -119,7 +178,8 @@ export class EnableBankingClient {
         url.searchParams.set("continuation_key", continuationKey);
       }
 
-      const response = await fetch(url.toString(), {
+      const response = await this.loggedFetch(`fetchTransactions[${accountId}]`, url.toString(), {
+        method: "GET",
         headers: {
           Authorization: auth,
           "X-Session-Id": this.sessionId,

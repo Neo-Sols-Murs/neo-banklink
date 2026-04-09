@@ -46,6 +46,13 @@ export interface EBTransactionsResponse {
 // Enable Banking OAuth / session types
 // ---------------------------------------------------------------------------
 
+export interface EBASPSPDetails {
+  name: string;
+  country: string;
+  maximum_consent_validity?: number; // days
+  [key: string]: unknown;
+}
+
 export interface EBAuthResponse {
   url: string;
 }
