@@ -28,7 +28,7 @@ export async function handleReauth(request: Request, env: Env): Promise<Response
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const validUntil = addDays(today, CONSENT_DAYS);
+  const validUntil = `${addDays(today, CONSENT_DAYS)}T00:00:00+00:00`;
   const state = crypto.randomUUID();
 
   await env.KV.put(`auth:state:${state}`, "1", { expirationTtl: CSRF_TTL_SECONDS });
