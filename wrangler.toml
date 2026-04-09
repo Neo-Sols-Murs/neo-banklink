@@ -26,7 +26,7 @@ max_batch_size = 1
 max_batch_timeout = 0
 
 [triggers]
-crons = ["0 * * * *"]
+crons = ["0 0 7-18 ? * MON,TUE,WED,THU,FRI,SAT *"]
 
 [observability]
 enabled = false
@@ -39,6 +39,6 @@ persist = true
 invocation_logs = true
 
 [observability.traces]
-enabled = true
+enabled = false
 persist = true
 head_sampling_rate = 1
