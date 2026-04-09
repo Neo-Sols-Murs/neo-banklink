@@ -2,6 +2,19 @@
 
 All notable changes to neo-banklink are documented here.
 
+## [0.4.0] — 2026-04-09
+
+### Added
+- `GET /ui?token=<SYNC_TOKEN>` — employee-facing dashboard: session health (color-coded banner with days remaining), last sync time, per-account booked/pending/unsynced counts, and a "Trigger Sync" button
+- `POST /ui?token=<SYNC_TOKEN>` — triggers a sync run and redirects back to the dashboard with a flash confirmation message
+- `SYNC_TOKEN` secret — lower-privilege token for the `/ui` dashboard, separate from `ADMIN_SECRET`
+- `src/ui.ts` — dashboard handler module
+
+### Changed
+- Commit procedure: CHANGELOG.md, README.md, and CLAUDE.md are now updated as part of every commit
+
+---
+
 ## [0.3.0] — 2026-04-09
 
 ### Added

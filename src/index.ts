@@ -1,6 +1,7 @@
 import { runSync } from "./sync";
 import { handleReauth, handleCallback } from "./auth";
 import { handleStatus } from "./status";
+import { handleUI, handleUISync } from "./ui";
 import type { Env } from "./types";
 
 async function startSync(env: Env): Promise<void> {
@@ -29,6 +30,14 @@ export default {
     }
     if (pathname === "/callback" && request.method === "GET") {
       return handleCallback(request, env);
+    }
+
+    // UI dashboard — token-authenticated via query param (SYNC_TOKEN).
+    if (pathname === "/ui" && request.method === "GET") {
+      return handleUI(request, env);
+    }
+    if (pathname === "/ui" && request.method === "POST") {
+      return handleUISync(request, env, ctx);
     }
 
     // All other routes require ADMIN_SECRET.

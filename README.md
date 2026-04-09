@@ -57,7 +57,9 @@ A KV mutex (`sync:lock`, 5-minute TTL) prevents concurrent cron and queue runs f
 |---|---|---|---|
 | `GET` | `/reauth` | none | Starts OAuth flow; redirects to bank login page |
 | `GET` | `/callback` | none (CSRF via state token) | Exchanges OAuth code; stores session in KV |
-| `GET` | `/status` | Bearer `ADMIN_SECRET` | Session health, account stats, cursor values |
+| `GET` | `/ui?token=…` | `SYNC_TOKEN` query param | Employee dashboard: session health, stats, resync button |
+| `POST` | `/ui?token=…` | `SYNC_TOKEN` query param | Triggers a sync run from the dashboard |
+| `GET` | `/status` | Bearer `ADMIN_SECRET` | Full JSON status: session, accounts, cursor values |
 | `POST` | `/sync` | Bearer `ADMIN_SECRET` | Manually triggers a sync run |
 
 ### Enable Banking OAuth flow
@@ -113,6 +115,7 @@ npm run db:migrate:remote
 | `AIRTABLE_BASE_ID` | Airtable base ID (starts with `app`) |
 | `AIRTABLE_TABLE_NAME` | Name of the target Airtable table |
 | `ADMIN_SECRET` | Bearer token for `/status` and `/sync` |
+| `SYNC_TOKEN` | Query-param token for the `/ui` dashboard (shareable with employees) |
 
 ### Optional secrets (ASPSP defaults for /reauth)
 
@@ -180,6 +183,7 @@ src/
   sync.ts               Sync engine (per-account orchestration)
   db.ts                 D1 query helpers
   status.ts             /status handler
+  ui.ts                 /ui employee dashboard handler
   types.ts              TypeScript types
   utils.ts              addDays helper
   clients/

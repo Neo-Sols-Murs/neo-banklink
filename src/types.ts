@@ -119,6 +119,7 @@ export interface Env {
   AIRTABLE_TABLE_NAME: string;
 
   ADMIN_SECRET: string;
+  SYNC_TOKEN: string;    // shared token for the /ui dashboard (lower-privilege than ADMIN_SECRET)
 
   // Optional: defaults for the /reauth endpoint (can also be passed as query params)
   ENABLE_BANKING_ASPSP_NAME?: string;

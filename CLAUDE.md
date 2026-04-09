@@ -18,6 +18,18 @@ It runs on a hourly cron. It self-chains via Cloudflare Queues when more work re
 
 ---
 
+## Commit procedure
+
+When the user asks to commit, before creating the commit:
+
+1. **Update `CHANGELOG.md`** — add an entry under the appropriate version (or create a new version block if the changes warrant a version bump). Follow the existing format: version header, date, and grouped `### Added / Changed / Fixed` sections.
+2. **Update `README.md`** — if the HTTP API surface, setup steps, secrets, or project structure changed, reflect that.
+3. **Update `CLAUDE.md`** — if architecture, KV keys, DB schema, API shapes, known issues, or agent guidance changed, update the relevant section.
+
+Then commit all changed files together (docs + code in one commit, or docs as a follow-up if the code was already committed).
+
+---
+
 ## Versioning
 
 This project follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
@@ -38,6 +50,7 @@ src/auth.ts               /reauth (OAuth initiation) and /callback (code exchang
 src/sync.ts               Core sync engine. Per-account orchestration. KV mutex.
 src/db.ts                 All D1 queries. No raw SQL outside this file.
 src/status.ts             /status handler. Reads KV + D1, returns JSON.
+src/ui.ts                 /ui employee dashboard. Server-rendered HTML. Token-auth.
 src/types.ts              All TypeScript interfaces. Source of truth for API shapes.
 src/utils.ts              addDays(dateStr, n): string — the only utility.
 src/clients/
@@ -218,6 +231,7 @@ The callback URL passed to Enable Banking is computed from the incoming request:
 Routes are matched by exact `pathname` and method. There is no router library.
 
 - `GET /reauth` and `GET /callback` — no auth (must be reachable from a browser)
+- `GET /ui?token=…` and `POST /ui?token=…` — token-auth via `SYNC_TOKEN` query param (checked before the `ADMIN_SECRET` gate)
 - All other routes — require `Authorization: Bearer <ADMIN_SECRET>` header
 - `GET /status` — returns JSON status
 - `POST /sync` — triggers a sync run via `ctx.waitUntil`
@@ -255,6 +269,8 @@ If the Airtable table schema changes, update `toAirtableFields` in `airtable.ts`
 ## Secrets and environment
 
 Secrets are set via `wrangler secret put` and never appear in `wrangler.toml`. The `Env` interface in `types.ts` declares all bindings and secrets. Optional secrets (`ENABLE_BANKING_ASPSP_NAME`, etc.) are typed as `string | undefined`.
+
+`SYNC_TOKEN` is a separate, lower-privilege secret for the `/ui` dashboard. It is intended to be shared with employees who need to trigger resyncs. It does not grant access to `/status` or `/sync` (those require `ADMIN_SECRET`).
 
 Session ID and account IDs have a dual-source pattern: KV takes precedence over env secrets. This allows the system to operate before re-auth (using bootstrap secrets) and after re-auth (using KV-stored values from `/callback`).
 
